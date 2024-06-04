@@ -3,12 +3,16 @@ import os
 from math import log10
 from collections import defaultdict
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+import joblib
 
 
 def prepare():
     dictionary = []  # dicts by files
     words = dict()  # one dict with sum words(yes or no in that file)
-    files = os.listdir(".")
+    path = "./train_vec"
+    files = os.listdir(path)
     file_value = 0
     log_file = open("log.txt", 'w')
     files_name = []
@@ -20,7 +24,8 @@ def prepare():
         files_name.append(file)
         file_value += 1
         s = ""
-        with open(file) as f:
+        open_file = f'{path}/{file}'
+        with open(open_file) as f:
             for line in f:
                 s += str(line)
             k = ast.parse(s)
@@ -86,67 +91,105 @@ def process(dictionary, words, file_value):
     return result_dict
 
 
-def code2vec():
-    dictionary = defaultdict()
-    words = dict()
-    path = "./test"
-    files = os.listdir(path)
-    file_value = 0
-    log_file = open("log_test.txt", 'w')
-    print("test", file=log_file)
-    print("files:", files, file=log_file)
-
-    with open('result_vec.txt', 'r') as f:
-        dictionary = f.read()
-    result_dict = defaultdict(int, ast.literal_eval(dictionary))
-
-    # get information
-    for file in files:
-        if file[-2:] != 'py':
-            continue
-
-        file_value += 1
-        s = ""
-        open_file = path + '/' + file
-        with open(open_file) as f:
-            for line in f:
-                s += str(line)
-            k = ast.parse(s)
-            d = defaultdict(int)
-
-            for node in ast.walk(k):
-                d[type(node).__name__] += 1
-
-    result_vec = []
-    for word in result_dict:
-        result_vec.append(d[word] * result_dict[word])
-
-    print(result_vec, file=log_file, end='\n\n')
-    log_file.close()
-    return result_vec
-
 
 def classify(vector, model=None):
     if model is None:
-        model = LogisticRegression(random_state=42)
+        model = joblib.load('logistic_regression_model.pkl')
+    pred = model.predict(vector)
+    return pred
+
+
+def code2vec(path='./data'):
+    file = open("log_train.txt", 'w')
+    files = os.listdir(path)
+    log_file = open("log_data.txt", 'w')
+    
+    with open('./result_vec.txt', 'r') as f:
+        dictionary = f.read()
+    result_dict = defaultdict(int, ast.literal_eval(dictionary))
+    for file in files:
+        s = ""
+        open_file = path + '/' + file
+        
+        with open(open_file, 'r', encoding='utf8') as f:
+            for line in f:
+                s += str(line)
+        s = s.split('\"\n\"')
+
+        s[0] = s[0][6:]
+        s[-1] = s[-1][:-2]
+        value_error = 0
+        value = 0
+        d = defaultdict(int)
+        for prog in s:
+            value += 1
+            try:
+                k = ast.parse(prog)
+            except SyntaxError:
+                value_error += 1
+                # print(f"In file {file} syntax error! \n#####{prog}###")
+                continue
+            for node in ast.walk(k):
+                d[type(node).__name__] += 1
+            vec = []
+            for word in result_dict:
+                vec.append(d[word] * result_dict[word])
+            print(file, file=log_file)
+            print(*vec, file=log_file)
+        print(file)
+        print(value_error, value, value_error/value)
+            
+    log_file.close()
 
 
 def train():
-    data = []
-    with open("result_vec.txt", 'r') as f:
-        data = f.read()
-    model = LogisticRegression(multi_class="multinomial")
-    model.fit()
+    X = []
+    Y = []
+    with open("log_data.txt", 'r') as f:
+        s = f.readline()
+        while s:
+            if (s[:5] == "task-"):
+                name = int(s[5:7])
+                Y.append(name)
+            else:
+                arr = list(map(float, s.split()))
+                X.append(arr)
+            s = f.readline()
+            
+        
+    print(len(X)) # вектора
+    print(len(Y)) # Ответы
 
+    X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+    # Масштабирование данных
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    # Создание и обучение модели логистической регрессии
+    model = LogisticRegression(multi_class='auto', max_iter=1000)
+    model.fit(X_train, y_train)
+
+    # Оценка точности модели на тестовом наборе
+    accuracy = model.score(X_test, y_test)
+    print("Точность модели:", accuracy)
+    joblib.dump(model, 'logistic_regression_model.pkl')
     return model
 
 
+
 def main():
-    dic, word, count = prepare()
-    result_file = open("result_vec.txt", 'w')
-    print(process(dic, word, count), file=result_file)
-    result_file.close()
-    print(code2vec())
+    # dic, word, count = prepare()
+    # result_file = open("result_vec.txt", 'w')
+    # result_dict = process(dic, word, count)
+    # print(result_dict, file=result_file)
+    # result_file.close()
+    # print(result_dict)
+    # print(code2vec()) # apply
+    # code2vec()
+    # train()
+    # classify(vector)
 
 
 if __name__ == '__main__':

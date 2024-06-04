@@ -3,3 +3,4 @@ venv
 *.txt
 example.py
 test.py
+data
